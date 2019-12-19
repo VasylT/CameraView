@@ -16,7 +16,7 @@ allprojects {
         jcenter()
         google()
     }
-    group = 'natario-cameraview'
+    group = 'natario'
     version = '1.0'
 }
 
