@@ -37,11 +37,12 @@ public class Full1PictureRecorder extends FullPictureRecorder {
 
     @Override
     public void take() {
-        LOG.i("take() called.");
+        LOG.i("take(☺) called.");
         // Stopping the preview callback is important on older APIs / emulators,
         // or takePicture can hang and leave the camera in a bad state.
-        mCamera.setPreviewCallbackWithBuffer(null);
-        mCamera.takePicture(
+        try {
+            mCamera.setPreviewCallbackWithBuffer(null);
+            mCamera.takePicture(
                 new Camera.ShutterCallback() {
                     @Override
                     public void onShutter() {
@@ -59,21 +60,25 @@ public class Full1PictureRecorder extends FullPictureRecorder {
                         try {
                             ExifInterface exif = new ExifInterface(new ByteArrayInputStream(data));
                             int exifOrientation = exif.getAttributeInt(
-                                    ExifInterface.TAG_ORIENTATION,
-                                    ExifInterface.ORIENTATION_NORMAL);
+                                ExifInterface.TAG_ORIENTATION,
+                                ExifInterface.ORIENTATION_NORMAL);
                             exifRotation = ExifHelper.getOrientation(exifOrientation);
                         } catch (IOException e) {
                             exifRotation = 0;
                         }
                         mResult.data = data;
                         mResult.rotation = exifRotation;
-                        LOG.i("take(): starting preview again. ", Thread.currentThread());
-                        camera.setPreviewCallbackWithBuffer(mEngine);
-                        camera.startPreview(); // This is needed, read somewhere in the docs.
+                        //LOG.i("take(): starting preview again. ", Thread.currentThread());
+                        //camera.setPreviewCallbackWithBuffer(mEngine);
+                        //camera.startPreview(); // This is needed, read somewhere in the docs.
                         dispatchResult();
                     }
                 }
-        );
+            );
+        } catch (RuntimeException e) {
+            LOG.e("take() failed");
+            mError = e;
+        }
         LOG.i("take() returned.");
     }
 
