@@ -37,7 +37,7 @@ public class Full1PictureRecorder extends FullPictureRecorder {
 
     @Override
     public void take() {
-        LOG.i("take(☺) called.");
+        LOG.i("take() picture called.");
         // Stopping the preview callback is important on older APIs / emulators,
         // or takePicture can hang and leave the camera in a bad state.
         try {
