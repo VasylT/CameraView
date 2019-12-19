@@ -16,6 +16,8 @@ allprojects {
         jcenter()
         google()
     }
+    group = 'natario-cameraview'
+    version = '1.0'
 }
 
 ext {
