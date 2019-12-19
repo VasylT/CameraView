@@ -15,9 +15,8 @@ allprojects {
     repositories {
         jcenter()
         google()
+        maven { url 'https://jitpack.io' }
     }
-    group = 'com.otaliastudios'
-    version = '2.5.0'
 }
 
 ext {
