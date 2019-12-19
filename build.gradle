@@ -16,8 +16,8 @@ allprojects {
         jcenter()
         google()
     }
-    group = 'natario'
-    version = '1.0'
+    group = 'com.otaliastudios'
+    version = '2.5.0'
 }
 
 ext {
