@@ -39,12 +39,13 @@ public class Full1PictureRecorder extends FullPictureRecorder {
 
     @Override
     public void take() {
-        LOG.i("take() called.");
+        LOG.i("take() picture called.");
         // Stopping the preview callback is important on older APIs / emulators,
         // or takePicture can hang and leave the camera in a bad state.
-        mCamera.setPreviewCallbackWithBuffer(null);
-        mEngine.getFrameManager().release();
-        mCamera.takePicture(
+        try {
+            mCamera.setPreviewCallbackWithBuffer(null);
+            mEngine.getFrameManager().release();
+            mCamera.takePicture(
                 new Camera.ShutterCallback() {
                     @Override
                     public void onShutter() {
@@ -62,8 +63,8 @@ public class Full1PictureRecorder extends FullPictureRecorder {
                         try {
                             ExifInterface exif = new ExifInterface(new ByteArrayInputStream(data));
                             int exifOrientation = exif.getAttributeInt(
-                                    ExifInterface.TAG_ORIENTATION,
-                                    ExifInterface.ORIENTATION_NORMAL);
+                                ExifInterface.TAG_ORIENTATION,
+                                ExifInterface.ORIENTATION_NORMAL);
                             exifRotation = ExifHelper.getOrientation(exifOrientation);
                         } catch (IOException e) {
                             exifRotation = 0;
@@ -74,26 +75,30 @@ public class Full1PictureRecorder extends FullPictureRecorder {
 
                         // It's possible that by the time this callback is invoked, we're not previewing
                         // anymore, so check before restarting preview.
-                        if (mEngine.getState().isAtLeast(CameraState.PREVIEW)) {
-                            camera.setPreviewCallbackWithBuffer(mEngine);
-                            Size previewStreamSize = mEngine.getPreviewStreamSize(Reference.SENSOR);
-                            if (previewStreamSize == null) {
-                                throw new IllegalStateException("Preview stream size " +
-                                        "should never be null here.");
-                            }
-                            // Need to re-setup the frame manager, otherwise no frames are processed
-                            // after takePicture() is called
-                            mEngine.getFrameManager().setUp(
-                                    mEngine.getFrameProcessingFormat(),
-                                    previewStreamSize,
-                                    mEngine.getAngles()
-                            );
-                            camera.startPreview();
-                        }
+//                        if (mEngine.getState().isAtLeast(CameraState.PREVIEW)) {
+//                            camera.setPreviewCallbackWithBuffer(mEngine);
+//                            Size previewStreamSize = mEngine.getPreviewStreamSize(Reference.SENSOR);
+//                            if (previewStreamSize == null) {
+//                                throw new IllegalStateException("Preview stream size " +
+//                                        "should never be null here.");
+//                            }
+//                            // Need to re-setup the frame manager, otherwise no frames are processed
+//                            // after takePicture() is called
+//                            mEngine.getFrameManager().setUp(
+//                                    mEngine.getFrameProcessingFormat(),
+//                                    previewStreamSize,
+//                                    mEngine.getAngles()
+//                            );
+//                            camera.startPreview();
+//                        }
                         dispatchResult();
                     }
                 }
-        );
+            );
+        } catch (RuntimeException e) {
+            LOG.e("take() failed");
+            mError = e;
+        }
         LOG.i("take() returned.");
     }
 
