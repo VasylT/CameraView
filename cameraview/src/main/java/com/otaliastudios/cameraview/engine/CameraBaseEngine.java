@@ -1,5 +1,7 @@
 package com.otaliastudios.cameraview.engine;
 
+import android.graphics.PointF;
+import android.graphics.RectF;
 import android.location.Location;
 
 import androidx.annotation.CallSuper;
@@ -14,6 +16,7 @@ import com.otaliastudios.cameraview.CameraOptions;
 import com.otaliastudios.cameraview.PictureResult;
 import com.otaliastudios.cameraview.VideoResult;
 import com.otaliastudios.cameraview.controls.Audio;
+import com.otaliastudios.cameraview.controls.AudioCodec;
 import com.otaliastudios.cameraview.controls.Facing;
 import com.otaliastudios.cameraview.controls.Flash;
 import com.otaliastudios.cameraview.controls.Hdr;
@@ -25,6 +28,7 @@ import com.otaliastudios.cameraview.engine.offset.Angles;
 import com.otaliastudios.cameraview.engine.offset.Reference;
 import com.otaliastudios.cameraview.engine.orchestrator.CameraState;
 import com.otaliastudios.cameraview.frame.FrameManager;
+import com.otaliastudios.cameraview.gesture.Gesture;
 import com.otaliastudios.cameraview.overlay.Overlay;
 import com.otaliastudios.cameraview.picture.PictureRecorder;
 import com.otaliastudios.cameraview.preview.CameraPreview;
@@ -35,6 +39,7 @@ import com.otaliastudios.cameraview.size.SizeSelectors;
 import com.otaliastudios.cameraview.video.VideoRecorder;
 
 import java.io.File;
+import java.io.FileDescriptor;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -57,6 +62,7 @@ public abstract class CameraBaseEngine extends CameraEngine {
     @SuppressWarnings("WeakerAccess") protected Flash mFlash;
     @SuppressWarnings("WeakerAccess") protected WhiteBalance mWhiteBalance;
     @SuppressWarnings("WeakerAccess") protected VideoCodec mVideoCodec;
+    @SuppressWarnings("WeakerAccess") protected AudioCodec mAudioCodec;
     @SuppressWarnings("WeakerAccess") protected Hdr mHdr;
     @SuppressWarnings("WeakerAccess") protected PictureFormat mPictureFormat;
     @SuppressWarnings("WeakerAccess") protected Location mLocation;
@@ -66,9 +72,10 @@ public abstract class CameraBaseEngine extends CameraEngine {
     @SuppressWarnings("WeakerAccess") protected boolean mPictureMetering;
     @SuppressWarnings("WeakerAccess") protected boolean mPictureSnapshotMetering;
     @SuppressWarnings("WeakerAccess") protected float mPreviewFrameRate;
+    @SuppressWarnings("WeakerAccess") private boolean mPreviewFrameRateExact;
 
-    private final FrameManager mFrameManager;
-    private final Angles mAngles;
+    private FrameManager mFrameManager;
+    private final Angles mAngles = new Angles();
     @Nullable private SizeSelector mPreviewStreamSizeSelector;
     private SizeSelector mPictureSizeSelector;
     private SizeSelector mVideoSizeSelector;
@@ -84,6 +91,7 @@ public abstract class CameraBaseEngine extends CameraEngine {
     private int mSnapshotMaxHeight; // in REF_VIEW like SizeSelectors
     private int mFrameProcessingMaxWidth; // in REF_VIEW like SizeSelectors
     private int mFrameProcessingMaxHeight; // in REF_VIEW like SizeSelectors
+    private int mFrameProcessingPoolSize;
     private Overlay mOverlay;
 
     // Ops used for testing.
@@ -107,17 +115,16 @@ public abstract class CameraBaseEngine extends CameraEngine {
     @SuppressWarnings("WeakerAccess")
     protected CameraBaseEngine(@NonNull Callback callback) {
         super(callback);
-        mFrameManager = instantiateFrameManager();
-        mAngles = new Angles();
     }
 
     /**
      * Called at construction time to get a frame manager that can later be
      * accessed through {@link #getFrameManager()}.
+     * @param poolSize pool size
      * @return a frame manager
      */
     @NonNull
-    protected abstract FrameManager instantiateFrameManager();
+    protected abstract FrameManager instantiateFrameManager(int poolSize);
 
     @NonNull
     @Override
@@ -128,6 +135,9 @@ public abstract class CameraBaseEngine extends CameraEngine {
     @NonNull
     @Override
     public FrameManager getFrameManager() {
+        if (mFrameManager == null) {
+            mFrameManager = instantiateFrameManager(mFrameProcessingPoolSize);
+        }
         return mFrameManager;
     }
 
@@ -236,6 +246,17 @@ public abstract class CameraBaseEngine extends CameraEngine {
     }
 
     @Override
+    public final void setAudioCodec(@NonNull AudioCodec codec) {
+        mAudioCodec = codec;
+    }
+
+    @NonNull
+    @Override
+    public final AudioCodec getAudioCodec() {
+        return mAudioCodec;
+    }
+
+    @Override
     public final void setAudioBitRate(int audioBitRate) {
         mAudioBitRate = audioBitRate;
     }
@@ -288,6 +309,16 @@ public abstract class CameraBaseEngine extends CameraEngine {
     @Override
     public final int getFrameProcessingFormat() {
         return mFrameProcessingFormat;
+    }
+
+    @Override
+    public final void setFrameProcessingPoolSize(int poolSize) {
+        mFrameProcessingPoolSize = poolSize;
+    }
+
+    @Override
+    public final int getFrameProcessingPoolSize() {
+        return mFrameProcessingPoolSize;
     }
 
     @Override
@@ -425,6 +456,16 @@ public abstract class CameraBaseEngine extends CameraEngine {
     }
 
     @Override
+    public final void setPreviewFrameRateExact(boolean previewFrameRateExact) {
+        mPreviewFrameRateExact = previewFrameRateExact;
+    }
+
+    @Override
+    public final boolean getPreviewFrameRateExact() {
+        return mPreviewFrameRateExact;
+    }
+
+    @Override
     public final float getPreviewFrameRate() {
         return mPreviewFrameRate;
     }
@@ -533,7 +574,9 @@ public abstract class CameraBaseEngine extends CameraEngine {
     }
 
     @Override
-    public final void takeVideo(final @NonNull VideoResult.Stub stub, final @NonNull File file) {
+    public final void takeVideo(final @NonNull VideoResult.Stub stub,
+                                final @Nullable File file,
+                                final @Nullable FileDescriptor fileDescriptor) {
         getOrchestrator().scheduleStateful("take video", CameraState.BIND, new Runnable() {
             @Override
             public void run() {
@@ -542,9 +585,16 @@ public abstract class CameraBaseEngine extends CameraEngine {
                 if (mMode == Mode.PICTURE) {
                     throw new IllegalStateException("Can't record video while in PICTURE mode");
                 }
-                stub.file = file;
+                if (file != null) {
+                    stub.file = file;
+                } else if (fileDescriptor != null) {
+                    stub.fileDescriptor = fileDescriptor;
+                } else {
+                    throw new IllegalStateException("file and fileDescriptor are both null.");
+                }
                 stub.isSnapshot = false;
                 stub.videoCodec = mVideoCodec;
+                stub.audioCodec = mAudioCodec;
                 stub.location = mLocation;
                 stub.facing = mFacing;
                 stub.audio = mAudio;
@@ -572,6 +622,7 @@ public abstract class CameraBaseEngine extends CameraEngine {
                 stub.file = file;
                 stub.isSnapshot = true;
                 stub.videoCodec = mVideoCodec;
+                stub.audioCodec = mAudioCodec;
                 stub.location = mLocation;
                 stub.facing = mFacing;
                 stub.videoBitRate = mVideoBitRate;

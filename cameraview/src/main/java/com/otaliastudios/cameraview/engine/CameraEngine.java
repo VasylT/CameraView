@@ -17,17 +17,19 @@ import com.otaliastudios.cameraview.CameraException;
 import com.otaliastudios.cameraview.CameraLogger;
 import com.otaliastudios.cameraview.CameraOptions;
 import com.otaliastudios.cameraview.PictureResult;
+import com.otaliastudios.cameraview.controls.AudioCodec;
 import com.otaliastudios.cameraview.controls.PictureFormat;
 import com.otaliastudios.cameraview.engine.orchestrator.CameraOrchestrator;
 import com.otaliastudios.cameraview.engine.orchestrator.CameraState;
 import com.otaliastudios.cameraview.engine.orchestrator.CameraStateOrchestrator;
+import com.otaliastudios.cameraview.metering.MeteringRegions;
 import com.otaliastudios.cameraview.overlay.Overlay;
 import com.otaliastudios.cameraview.VideoResult;
 import com.otaliastudios.cameraview.engine.offset.Angles;
 import com.otaliastudios.cameraview.engine.offset.Reference;
 import com.otaliastudios.cameraview.frame.Frame;
 import com.otaliastudios.cameraview.frame.FrameManager;
-import com.otaliastudios.cameraview.internal.utils.WorkerHandler;
+import com.otaliastudios.cameraview.internal.WorkerHandler;
 import com.otaliastudios.cameraview.picture.PictureRecorder;
 import com.otaliastudios.cameraview.preview.CameraPreview;
 import com.otaliastudios.cameraview.controls.Audio;
@@ -47,6 +49,7 @@ import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 
 import java.io.File;
+import java.io.FileDescriptor;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -635,6 +638,9 @@ public abstract class CameraEngine implements
     public abstract void setAudioBitRate(int audioBitRate);
     public abstract int getAudioBitRate();
 
+    public abstract void setAudioCodec(@NonNull AudioCodec codec);
+    @NonNull public abstract AudioCodec getAudioCodec();
+
     public abstract void setSnapshotMaxWidth(int maxWidth);
     public abstract int getSnapshotMaxWidth();
 
@@ -649,6 +655,9 @@ public abstract class CameraEngine implements
 
     public abstract void setFrameProcessingFormat(int format);
     public abstract int getFrameProcessingFormat();
+
+    public abstract void setFrameProcessingPoolSize(int poolSize);
+    public abstract int getFrameProcessingPoolSize();
 
     public abstract void setAutoFocusResetDelay(long delayMillis);
     public abstract long getAutoFocusResetDelay();
@@ -684,6 +693,8 @@ public abstract class CameraEngine implements
     public abstract void setPictureFormat(@NonNull PictureFormat pictureFormat);
     @NonNull public abstract PictureFormat getPictureFormat();
 
+    public abstract void setPreviewFrameRateExact(boolean previewFrameRateExact);
+    public abstract boolean getPreviewFrameRateExact();
     public abstract void setPreviewFrameRate(float previewFrameRate);
     public abstract float getPreviewFrameRate();
 
@@ -696,7 +707,9 @@ public abstract class CameraEngine implements
     public abstract void setPictureSnapshotMetering(boolean enable);
     public abstract boolean getPictureSnapshotMetering();
 
-    public abstract void startAutoFocus(@Nullable Gesture gesture, @NonNull PointF point);
+    public abstract void startAutoFocus(@Nullable Gesture gesture,
+                                        @NonNull MeteringRegions regions,
+                                        @NonNull PointF legacyPoint);
 
     public abstract void setPlaySounds(boolean playSounds);
 
@@ -705,7 +718,9 @@ public abstract class CameraEngine implements
     public abstract void takePictureSnapshot(final @NonNull PictureResult.Stub stub);
 
     public abstract boolean isTakingVideo();
-    public abstract void takeVideo(@NonNull VideoResult.Stub stub, @NonNull File file);
+    public abstract void takeVideo(@NonNull VideoResult.Stub stub,
+                                   @Nullable File file,
+                                   @Nullable FileDescriptor fileDescriptor);
     public abstract void takeVideoSnapshot(@NonNull VideoResult.Stub stub, @NonNull File file);
     public abstract void stopVideo();
 

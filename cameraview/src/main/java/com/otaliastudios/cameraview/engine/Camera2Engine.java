@@ -60,17 +60,19 @@ import com.otaliastudios.cameraview.frame.Frame;
 import com.otaliastudios.cameraview.frame.FrameManager;
 import com.otaliastudios.cameraview.frame.ImageFrameManager;
 import com.otaliastudios.cameraview.gesture.Gesture;
-import com.otaliastudios.cameraview.internal.utils.CropHelper;
-import com.otaliastudios.cameraview.internal.utils.WorkerHandler;
+import com.otaliastudios.cameraview.internal.CropHelper;
+import com.otaliastudios.cameraview.metering.MeteringRegions;
 import com.otaliastudios.cameraview.picture.Full2PictureRecorder;
 import com.otaliastudios.cameraview.picture.Snapshot2PictureRecorder;
-import com.otaliastudios.cameraview.preview.GlCameraPreview;
+import com.otaliastudios.cameraview.preview.RendererCameraPreview;
 import com.otaliastudios.cameraview.size.AspectRatio;
 import com.otaliastudios.cameraview.size.Size;
 import com.otaliastudios.cameraview.video.Full2VideoRecorder;
 import com.otaliastudios.cameraview.video.SnapshotVideoRecorder;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -81,9 +83,9 @@ public class Camera2Engine extends CameraBaseEngine implements
         ImageReader.OnImageAvailableListener,
         ActionHolder {
 
-    private static final int FRAME_PROCESSING_POOL_SIZE = 2;
     private static final int FRAME_PROCESSING_FORMAT = ImageFormat.YUV_420_888;
-    @VisibleForTesting static final long METER_TIMEOUT = 2500;
+    @VisibleForTesting static final long METER_TIMEOUT = 5000;
+    private static final long METER_TIMEOUT_SHORT = 2500;
 
     private final CameraManager mManager;
     private String mCameraId;
@@ -482,8 +484,9 @@ public class Camera2Engine extends CameraBaseEngine implements
 
         // 1. PREVIEW
         // Create a preview surface with the correct size.
+        final Class outputClass = mPreview.getOutputClass();
         final Object output = mPreview.getOutput();
-        if (output instanceof SurfaceHolder) {
+        if (outputClass == SurfaceHolder.class) {
             try {
                 // This must be called from the UI thread...
                 Tasks.await(Tasks.call(new Callable<Void>() {
@@ -499,7 +502,7 @@ public class Camera2Engine extends CameraBaseEngine implements
                 throw new CameraException(e, CameraException.REASON_FAILED_TO_CONNECT);
             }
             mPreviewStreamSurface = ((SurfaceHolder) output).getSurface();
-        } else if (output instanceof SurfaceTexture) {
+        } else if (outputClass == SurfaceTexture.class) {
             ((SurfaceTexture) output).setDefaultBufferSize(
                     mPreviewStreamSize.getWidth(),
                     mPreviewStreamSize.getHeight());
@@ -541,12 +544,21 @@ public class Camera2Engine extends CameraBaseEngine implements
         // 4. FRAME PROCESSING
         if (hasFrameProcessors()) {
             mFrameProcessingSize = computeFrameProcessingSize();
+            // Hard to write down why, but in Camera2 we need a number of Frames that's one less
+            // than the number of Images. If we let all Images be part of Frames, thus letting all
+            // Images be used by processor at any given moment, the Camera2 output breaks.
+            // In fact, if there are no Images available, the sensor BLOCKS until it finds one,
+            // which is a big issue because processor times become a bottleneck for the preview.
+            // This is a design flaw in the ImageReader / sensor implementation, as they should
+            // simply DROP frames written to the surface if there are no Images available.
+            // Since this is not how things work, we ensure that one Image is always available here.
             mFrameProcessingReader = ImageReader.newInstance(
                     mFrameProcessingSize.getWidth(),
                     mFrameProcessingSize.getHeight(),
                     mFrameProcessingFormat,
-                    getFrameProcessingPoolSize());
-            mFrameProcessingReader.setOnImageAvailableListener(this, null);
+                    getFrameProcessingPoolSize() + 1);
+            mFrameProcessingReader.setOnImageAvailableListener(this,
+                    null);
             mFrameProcessingSurface = mFrameProcessingReader.getSurface();
             outputSurfaces.add(mFrameProcessingSurface);
         } else {
@@ -598,7 +610,7 @@ public class Camera2Engine extends CameraBaseEngine implements
         mPreview.setStreamSize(previewSizeForView.getWidth(), previewSizeForView.getHeight());
         mPreview.setDrawRotation(getAngles().offset(Reference.BASE, Reference.VIEW, Axis.ABSOLUTE));
         if (hasFrameProcessors()) {
-            getFrameManager().setUp(mFrameProcessingFormat, mFrameProcessingSize);
+            getFrameManager().setUp(mFrameProcessingFormat, mFrameProcessingSize, getAngles());
         }
 
         LOG.i("onStartPreview:", "Starting preview.");
@@ -621,7 +633,20 @@ public class Camera2Engine extends CameraBaseEngine implements
                 }
             });
         }
-        return Tasks.forResult(null);
+
+        // Wait for the first frame.
+        final TaskCompletionSource<Void> task = new TaskCompletionSource<>();
+        new BaseAction() {
+            @Override
+            public void onCaptureCompleted(@NonNull ActionHolder holder,
+                                           @NonNull CaptureRequest request,
+                                           @NonNull TotalCaptureResult result) {
+                super.onCaptureCompleted(holder, request, result);
+                setState(STATE_COMPLETED);
+                task.trySetResult(null);
+            }
+        }.start(this);
+        return task.getTask();
     }
 
     //endregion
@@ -747,7 +772,7 @@ public class Camera2Engine extends CameraBaseEngine implements
                                          boolean doMetering) {
         if (doMetering) {
             LOG.i("onTakePictureSnapshot:", "doMetering is true. Delaying.");
-            Action action = Actions.timeout(METER_TIMEOUT, createMeterAction(null));
+            Action action = Actions.timeout(METER_TIMEOUT_SHORT, createMeterAction(null));
             action.addCallback(new CompletionCallback() {
                 @Override
                 protected void onActionCompleted(@NonNull Action action) {
@@ -760,17 +785,16 @@ public class Camera2Engine extends CameraBaseEngine implements
             action.start(this);
         } else {
             LOG.i("onTakePictureSnapshot:", "doMetering is false. Performing.");
-            if (!(mPreview instanceof GlCameraPreview)) {
+            if (!(mPreview instanceof RendererCameraPreview)) {
                 throw new RuntimeException("takePictureSnapshot with Camera2 is only " +
                         "supported with Preview.GL_SURFACE");
             }
             // stub.size is not the real size: it will be cropped to the given ratio
             // stub.rotation will be set to 0 - we rotate the texture instead.
             stub.size = getUncroppedSnapshotSize(Reference.OUTPUT);
-            stub.rotation = getAngles().offset(Reference.SENSOR, Reference.OUTPUT,
-                    Axis.RELATIVE_TO_SENSOR);
+            stub.rotation = getAngles().offset(Reference.VIEW, Reference.OUTPUT, Axis.ABSOLUTE);
             mPictureRecorder = new Snapshot2PictureRecorder(stub, this,
-                    (GlCameraPreview) mPreview, outputRatio);
+                    (RendererCameraPreview) mPreview, outputRatio);
             mPictureRecorder.take();
         }
     }
@@ -780,7 +804,7 @@ public class Camera2Engine extends CameraBaseEngine implements
     protected void onTakePicture(@NonNull final PictureResult.Stub stub, boolean doMetering) {
         if (doMetering) {
             LOG.i("onTakePicture:", "doMetering is true. Delaying.");
-            Action action = Actions.timeout(METER_TIMEOUT, createMeterAction(null));
+            Action action = Actions.timeout(METER_TIMEOUT_SHORT, createMeterAction(null));
             action.addCallback(new CompletionCallback() {
                 @Override
                 protected void onActionCompleted(@NonNull Action action) {
@@ -885,10 +909,10 @@ public class Camera2Engine extends CameraBaseEngine implements
     @Override
     protected void onTakeVideoSnapshot(@NonNull VideoResult.Stub stub,
                                        @NonNull AspectRatio outputRatio) {
-        if (!(mPreview instanceof GlCameraPreview)) {
+        if (!(mPreview instanceof RendererCameraPreview)) {
             throw new IllegalStateException("Video snapshots are only supported with GL_SURFACE.");
         }
-        GlCameraPreview glPreview = (GlCameraPreview) mPreview;
+        RendererCameraPreview glPreview = (RendererCameraPreview) mPreview;
         Size outputSize = getUncroppedSnapshotSize(Reference.OUTPUT);
         if (outputSize == null) {
             throw new IllegalStateException("outputSize should not be null.");
@@ -896,24 +920,10 @@ public class Camera2Engine extends CameraBaseEngine implements
         Rect outputCrop = CropHelper.computeCrop(outputSize, outputRatio);
         outputSize = new Size(outputCrop.width(), outputCrop.height());
         stub.size = outputSize;
-        // Vertical:               0   (270-0-0)
-        // Left (unlocked):        270 (270-90-270)
-        // Right (unlocked):       90  (270-270-90)
-        // Upside down (unlocked): 180 (270-180-180)
-        // Left (locked):          270 (270-0-270)
-        // Right (locked):         90  (270-0-90)
-        // Upside down (locked):   180 (270-0-180)
-        // Unlike Camera1, the correct formula seems to be deviceOrientation,
-        // which means offset(Reference.BASE, Reference.OUTPUT, Axis.ABSOLUTE).
-        stub.rotation = getAngles().offset(Reference.BASE, Reference.OUTPUT, Axis.ABSOLUTE);
+        stub.rotation = getAngles().offset(Reference.VIEW, Reference.OUTPUT, Axis.ABSOLUTE);
         stub.videoFrameRate = Math.round(mPreviewFrameRate);
         LOG.i("onTakeVideoSnapshot", "rotation:", stub.rotation, "size:", stub.size);
-
-        // Start.
-        // The overlay rotation should alway be VIEW-OUTPUT, just liek Camera1Engine.
-        int overlayRotation = getAngles().offset(Reference.VIEW, Reference.OUTPUT, Axis.ABSOLUTE);
-        mVideoRecorder = new SnapshotVideoRecorder(this, glPreview, getOverlay(),
-                overlayRotation);
+        mVideoRecorder = new SnapshotVideoRecorder(this, glPreview, getOverlay());
         mVideoRecorder.start(stub);
     }
 
@@ -1236,8 +1246,11 @@ public class Camera2Engine extends CameraBaseEngine implements
     public void setZoom(final float zoom, final @Nullable PointF[] points, final boolean notify) {
         final float old = mZoomValue;
         mZoomValue = zoom;
+        // Zoom requests can be high frequency (e.g. linked to touch events), so
+        // we remove the task before scheduling to avoid stack overflows in orchestrator.
+        getOrchestrator().remove("zoom");
         mZoomTask = getOrchestrator().scheduleStateful(
-                "zoom (" + zoom + ")",
+                "zoom",
                 CameraState.ENGINE,
                 new Runnable() {
             @Override
@@ -1292,8 +1305,11 @@ public class Camera2Engine extends CameraBaseEngine implements
                                       final boolean notify) {
         final float old = mExposureCorrectionValue;
         mExposureCorrectionValue = EVvalue;
+        // EV requests can be high frequency (e.g. linked to touch events), so
+        // we remove the task before scheduling to avoid stack overflows in orchestrator.
+        getOrchestrator().remove("exposure correction");
         mExposureCorrectionTask = getOrchestrator().scheduleStateful(
-                "exposure correction (" + EVvalue + ")",
+                "exposure correction",
                 CameraState.ENGINE,
                 new Runnable() {
             @Override
@@ -1355,6 +1371,7 @@ public class Camera2Engine extends CameraBaseEngine implements
         Range<Integer>[] fpsRanges = readCharacteristic(
                 CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES,
                 fallback);
+        sortRanges(fpsRanges);
         if (mPreviewFrameRate == 0F) {
             // 0F is a special value. Fallback to a reasonable default.
             for (Range<Integer> fpsRange : fpsRanges) {
@@ -1380,6 +1397,26 @@ public class Camera2Engine extends CameraBaseEngine implements
         return false;
     }
 
+    private void sortRanges(Range<Integer>[] fpsRanges) {
+        if (getPreviewFrameRateExact() && mPreviewFrameRate != 0) { // sort by range width in ascending order
+            Arrays.sort(fpsRanges, new Comparator<Range<Integer>>() {
+                @Override
+                public int compare(Range<Integer> range1, Range<Integer> range2) {
+                    return (range1.getUpper() - range1.getLower())
+                            - (range2.getUpper() - range2.getLower());
+                }
+            });
+        } else { // sort by range width in descending order
+            Arrays.sort(fpsRanges, new Comparator<Range<Integer>>() {
+                @Override
+                public int compare(Range<Integer> range1, Range<Integer> range2) {
+                    return (range2.getUpper() - range2.getLower())
+                            - (range1.getUpper() - range1.getLower());
+                }
+            });
+        }
+    }
+
     @Override
     public void setPictureFormat(final @NonNull PictureFormat pictureFormat) {
         if (pictureFormat != mPictureFormat) {
@@ -1399,35 +1436,35 @@ public class Camera2Engine extends CameraBaseEngine implements
 
     //region Frame Processing
 
-    protected int getFrameProcessingPoolSize() {
-        return FRAME_PROCESSING_POOL_SIZE;
-    }
-
     @NonNull
     @Override
-    protected FrameManager instantiateFrameManager() {
-        return new ImageFrameManager(getFrameProcessingPoolSize());
+    protected FrameManager instantiateFrameManager(int poolSize) {
+        return new ImageFrameManager(poolSize);
     }
 
+    @EngineThread
     @Override
     public void onImageAvailable(ImageReader reader) {
-        LOG.v("onImageAvailable", "trying to acquire Image.");
+        LOG.v("onImageAvailable:", "trying to acquire Image.");
         Image image = null;
         try {
             image = reader.acquireLatestImage();
         } catch (Exception ignore) { }
         if (image == null) {
-            LOG.w("onImageAvailable", "failed to acquire Image!");
+            LOG.w("onImageAvailable:", "failed to acquire Image!");
         } else if (getState() == CameraState.PREVIEW && !isChangingState()) {
             // After preview, the frame manager is correctly set up
             //noinspection unchecked
             Frame frame = getFrameManager().getFrame(image,
-                    System.currentTimeMillis(),
-                    getAngles().offset(Reference.SENSOR,
-                            Reference.OUTPUT,
-                            Axis.RELATIVE_TO_SENSOR));
-            getCallback().dispatchFrame(frame);
+                    System.currentTimeMillis());
+            if (frame != null) {
+                LOG.v("onImageAvailable:", "Image acquired, dispatching.");
+                getCallback().dispatchFrame(frame);
+            } else {
+                LOG.i("onImageAvailable:", "Image acquired, but no free frames. DROPPING.");
+            }
         } else {
+            LOG.i("onImageAvailable:", "Image acquired in wrong state. Closing it now.");
             image.close();
         }
     }
@@ -1484,7 +1521,9 @@ public class Camera2Engine extends CameraBaseEngine implements
     //region 3A Metering
 
     @Override
-    public void startAutoFocus(@Nullable final Gesture gesture, @NonNull final PointF point) {
+    public void startAutoFocus(@Nullable final Gesture gesture,
+                               @NonNull final MeteringRegions regions,
+                               @NonNull final PointF legacyPoint) {
         // This will only work when we have a preview, since it launches the preview
         // in the end. Even without this it would need the bind state at least,
         // since we need the preview size.
@@ -1498,14 +1537,15 @@ public class Camera2Engine extends CameraBaseEngine implements
                 if (!mCameraOptions.isAutoFocusSupported()) return;
 
                 // Create the meter and start.
-                getCallback().dispatchOnFocusStart(gesture, point);
-                final MeterAction action = createMeterAction(point);
+                getCallback().dispatchOnFocusStart(gesture, legacyPoint);
+                final MeterAction action = createMeterAction(regions);
                 Action wrapper = Actions.timeout(METER_TIMEOUT, action);
                 wrapper.start(Camera2Engine.this);
                 wrapper.addCallback(new CompletionCallback() {
                     @Override
                     protected void onActionCompleted(@NonNull Action a) {
-                        getCallback().dispatchOnFocusEnd(gesture, action.isSuccessful(), point);
+                        getCallback().dispatchOnFocusEnd(gesture,
+                                action.isSuccessful(), legacyPoint);
                         getOrchestrator().remove("reset metering");
                         if (shouldResetAutoFocus()) {
                             getOrchestrator().scheduleStatefulDelayed("reset metering",
@@ -1525,7 +1565,7 @@ public class Camera2Engine extends CameraBaseEngine implements
     }
 
     @NonNull
-    private MeterAction createMeterAction(@Nullable PointF point) {
+    private MeterAction createMeterAction(@Nullable MeteringRegions regions) {
         // Before creating any new meter action, abort the old one.
         if (mMeterAction != null) mMeterAction.abort(this);
         // The meter will check the current configuration to see if AF/AE/AWB should run.
@@ -1535,8 +1575,7 @@ public class Camera2Engine extends CameraBaseEngine implements
         // The last one is under our control because the library has no focus API.
         // So let's set a good af mode here. This operation is reverted during onMeteringReset().
         applyFocusForMetering(mRepeatingRequestBuilder);
-        mMeterAction = new MeterAction(Camera2Engine.this, point,
-                point == null);
+        mMeterAction = new MeterAction(Camera2Engine.this, regions, regions == null);
         return mMeterAction;
     }
 

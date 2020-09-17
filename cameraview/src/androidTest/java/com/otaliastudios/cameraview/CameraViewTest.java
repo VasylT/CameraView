@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.res.TypedArray;
 import android.graphics.ImageFormat;
 import android.graphics.PointF;
+import android.graphics.RectF;
 import android.location.Location;
 import androidx.annotation.NonNull;
 import androidx.test.annotation.UiThreadTest;
@@ -18,6 +19,7 @@ import android.view.View;
 import android.view.ViewGroup;
 
 import com.otaliastudios.cameraview.controls.Audio;
+import com.otaliastudios.cameraview.controls.AudioCodec;
 import com.otaliastudios.cameraview.controls.ControlParser;
 import com.otaliastudios.cameraview.controls.Engine;
 import com.otaliastudios.cameraview.controls.Facing;
@@ -164,6 +166,7 @@ public class CameraViewTest extends BaseTest {
         assertEquals(cameraView.getHdr(), controls.getHdr());
         assertEquals(cameraView.getAudio(), controls.getAudio());
         assertEquals(cameraView.getVideoCodec(), controls.getVideoCodec());
+        assertEquals(cameraView.getAudioCodec(), controls.getAudioCodec());
         assertEquals(cameraView.getPictureFormat(), controls.getPictureFormat());
         //noinspection SimplifiableJUnitAssertion
         assertEquals(cameraView.getLocation(), null);
@@ -176,6 +179,7 @@ public class CameraViewTest extends BaseTest {
         assertEquals(cameraView.getFrameProcessingMaxWidth(), 0);
         assertEquals(cameraView.getFrameProcessingMaxHeight(), 0);
         assertEquals(cameraView.getFrameProcessingFormat(), 0);
+        assertFalse(cameraView.getPreviewFrameRateExact());
 
         // Self managed
         GestureParser gestures = new GestureParser(empty);
@@ -184,6 +188,7 @@ public class CameraViewTest extends BaseTest {
         assertEquals(cameraView.getUseDeviceOrientation(), CameraView.DEFAULT_USE_DEVICE_ORIENTATION);
         assertEquals(cameraView.getPictureMetering(), CameraView.DEFAULT_PICTURE_METERING);
         assertEquals(cameraView.getPictureSnapshotMetering(), CameraView.DEFAULT_PICTURE_SNAPSHOT_METERING);
+        assertEquals(cameraView.getFrameProcessingPoolSize(), CameraView.DEFAULT_FRAME_PROCESSING_POOL_SIZE);
         assertEquals(cameraView.getGestureAction(Gesture.TAP), gestures.getTapAction());
         assertEquals(cameraView.getGestureAction(Gesture.LONG_TAP), gestures.getLongTapAction());
         assertEquals(cameraView.getGestureAction(Gesture.PINCH), gestures.getPinchAction());
@@ -631,6 +636,20 @@ public class CameraViewTest extends BaseTest {
         cameraView.startAutoFocus(200, 200);
     }
 
+    @Test(expected = IllegalArgumentException.class)
+    public void testStartAutoFocus_illegal3() {
+        cameraView.startAutoFocus(new RectF(-1, -1, 1, 1));
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testStartAutoFocus_illegal4() {
+        cameraView.setLeft(0);
+        cameraView.setRight(100);
+        cameraView.setTop(0);
+        cameraView.setBottom(100);
+        cameraView.startAutoFocus(new RectF(-100, -100, 200, 200));
+    }
+
     @Test
     public void testStartAutoFocus() {
         cameraView.setLeft(0);
@@ -638,6 +657,16 @@ public class CameraViewTest extends BaseTest {
         cameraView.setTop(0);
         cameraView.setBottom(100);
         cameraView.startAutoFocus(50, 50);
+        assertTrue(mockController.mFocusStarted);
+    }
+
+    @Test
+    public void testStartAutoFocusRect() {
+        cameraView.setLeft(0);
+        cameraView.setRight(100);
+        cameraView.setTop(0);
+        cameraView.setBottom(100);
+        cameraView.startAutoFocus(new RectF(25, 25, 75, 75));
         assertTrue(mockController.mFocusStarted);
     }
 
@@ -747,6 +776,19 @@ public class CameraViewTest extends BaseTest {
     }
 
     @Test
+    public void testAudioCodec() {
+        cameraView.set(AudioCodec.DEVICE_DEFAULT);
+        assertEquals(cameraView.get(AudioCodec.class), AudioCodec.DEVICE_DEFAULT);
+        cameraView.set(AudioCodec.AAC);
+        assertEquals(cameraView.get(AudioCodec.class), AudioCodec.AAC);
+        cameraView.set(AudioCodec.HE_AAC);
+        assertEquals(cameraView.get(AudioCodec.class), AudioCodec.HE_AAC);
+        cameraView.set(AudioCodec.AAC_ELD);
+        assertEquals(cameraView.get(AudioCodec.class), AudioCodec.AAC_ELD);
+    }
+
+
+    @Test
     public void testVideoCodec() {
         cameraView.set(VideoCodec.H_263);
         assertEquals(cameraView.get(VideoCodec.class), VideoCodec.H_263);
@@ -808,6 +850,14 @@ public class CameraViewTest extends BaseTest {
     }
 
     @Test
+    public void testPreviewFrameRateExact() {
+        cameraView.setPreviewFrameRateExact(true);
+        assertTrue(cameraView.getPreviewFrameRateExact());
+        cameraView.setPreviewFrameRateExact(false);
+        assertFalse(cameraView.getPreviewFrameRateExact());
+    }
+
+    @Test
     public void testSnapshotMaxSize() {
         cameraView.setSnapshotMaxWidth(500);
         assertEquals(500, cameraView.getSnapshotMaxWidth());
@@ -829,6 +879,27 @@ public class CameraViewTest extends BaseTest {
         assertEquals(ImageFormat.YUV_420_888, cameraView.getFrameProcessingFormat());
         cameraView.setFrameProcessingFormat(ImageFormat.YUV_422_888);
         assertEquals(ImageFormat.YUV_422_888, cameraView.getFrameProcessingFormat());
+    }
+
+    @Test
+    public void testFrameProcessingPoolSize() {
+        cameraView.setFrameProcessingPoolSize(4);
+        assertEquals(4, cameraView.getFrameProcessingPoolSize());
+        cameraView.setFrameProcessingPoolSize(6);
+        assertEquals(6, cameraView.getFrameProcessingPoolSize());
+    }
+
+    @Test
+    public void testFrameProcessingExecutors() {
+        cameraView.setFrameProcessingExecutors(5);
+        assertEquals(5, cameraView.getFrameProcessingExecutors());
+        cameraView.setFrameProcessingExecutors(2);
+        assertEquals(2, cameraView.getFrameProcessingExecutors());
+    }
+
+    @Test(expected = RuntimeException.class)
+    public void testFrameProcessingExecutors_throws() {
+        cameraView.setFrameProcessingExecutors(0);
     }
 
     //endregion

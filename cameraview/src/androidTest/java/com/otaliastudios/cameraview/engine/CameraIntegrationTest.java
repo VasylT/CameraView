@@ -31,7 +31,7 @@ import com.otaliastudios.cameraview.frame.FrameProcessor;
 import com.otaliastudios.cameraview.size.SizeSelectors;
 import com.otaliastudios.cameraview.tools.Emulator;
 import com.otaliastudios.cameraview.tools.Op;
-import com.otaliastudios.cameraview.internal.utils.WorkerHandler;
+import com.otaliastudios.cameraview.internal.WorkerHandler;
 import com.otaliastudios.cameraview.overlay.Overlay;
 import com.otaliastudios.cameraview.size.Size;
 import com.otaliastudios.cameraview.tools.Retry;
@@ -45,7 +45,6 @@ import androidx.test.rule.GrantPermissionRule;
 
 import org.junit.After;
 import org.junit.Before;
-import org.junit.BeforeClass;
 import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.ArgumentMatcher;
@@ -1084,6 +1083,20 @@ public abstract class CameraIntegrationTest<E extends CameraBaseEngine> extends 
     @Test
     @Retry(emulatorOnly = true)
     @SdkExclude(maxSdkVersion = 22, emulatorOnly = true)
+    public void testFrameProcessing_afterPicture() throws Exception {
+        FrameProcessor processor = mock(FrameProcessor.class);
+        camera.addFrameProcessor(processor);
+        openSync(true);
+
+        camera.takePicture();
+        waitForPictureResult(true);
+
+        assert15Frames(processor);
+    }
+
+    @Test
+    @Retry(emulatorOnly = true)
+    @SdkExclude(maxSdkVersion = 22, emulatorOnly = true)
     public void testFrameProcessing_afterRestart() throws Exception {
         FrameProcessor processor = mock(FrameProcessor.class);
         camera.addFrameProcessor(processor);
@@ -1135,12 +1148,17 @@ public abstract class CameraIntegrationTest<E extends CameraBaseEngine> extends 
     @Retry(emulatorOnly = true)
     @SdkExclude(maxSdkVersion = 22, emulatorOnly = true)
     public void testFrameProcessing_format() {
+        // We wouldn't need to open/close for each format, but we do because legacy devices can
+        // crash due to their bad internal implementation when we perform restartBind().
+        // And setFrameProcessorFormat can trigger such restart.
         CameraOptions o = openSync(true);
         Collection<Integer> formats = o.getSupportedFrameProcessingFormats();
+        closeSync(true);
         for (int format : formats) {
             LOG.i("[TEST FRAME FORMAT]", "Testing", format, "...");
             Op<Boolean> op = testFrameProcessorFormat(format);
             assertNotNull(op.await(DELAY));
+            closeSync(true);
         }
     }
 
@@ -1157,6 +1175,7 @@ public abstract class CameraIntegrationTest<E extends CameraBaseEngine> extends 
                 }
             }
         });
+        openSync(true);
         return op;
     }
 
