@@ -30,11 +30,11 @@ dependencies {
 
     androidTestImplementation("androidx.test:runner:1.3.0")
     androidTestImplementation("androidx.test:rules:1.3.0")
-    androidTestImplementation("androidx.test.ext:junit:1.1.1")
+    androidTestImplementation("androidx.test.ext:junit:1.1.2")
     androidTestImplementation("org.mockito:mockito-android:2.28.2")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.2.0")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.3.0")
 
-    api("androidx.exifinterface:exifinterface:1.2.0")
+    api("androidx.exifinterface:exifinterface:1.3.0")
     api("androidx.lifecycle:lifecycle-common:2.2.0")
     api("com.google.android.gms:play-services-tasks:17.2.0")
     implementation("androidx.annotation:annotation:1.1.0")
