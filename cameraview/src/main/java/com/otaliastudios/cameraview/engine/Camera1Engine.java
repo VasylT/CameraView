@@ -163,7 +163,8 @@ public class Camera1Engine extends CameraBaseEngine implements
             mCamera = Camera.open(mCameraId);
         } catch (Exception e) {
             LOG.e("onStartEngine:", "Failed to connect. Maybe in use by another app?");
-            throw new CameraException(e, CameraException.REASON_FAILED_TO_CONNECT);
+            //throw new CameraException(e, CameraException.REASON_FAILED_TO_CONNECT);
+            return Tasks.forResult(null);
         }
         if (mCamera == null) {
             LOG.e("onStartEngine:", "Failed to connect. Camera is null, maybe in use by another app or already released?");
