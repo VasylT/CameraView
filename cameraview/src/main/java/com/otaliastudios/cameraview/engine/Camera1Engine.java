@@ -271,7 +271,9 @@ public class Camera1Engine extends CameraBaseEngine implements
 
         mCamera.setPreviewCallbackWithBuffer(null); // Release anything left
         mCamera.setPreviewCallbackWithBuffer(this); // Add ourselves
-        getFrameManager().setUp(PREVIEW_FORMAT, mPreviewStreamSize, getAngles());
+        if (mPreviewStreamSize != null) {
+            getFrameManager().setUp(PREVIEW_FORMAT, mPreviewStreamSize, getAngles());
+        }
 
         LOG.i("onStartPreview", "Starting preview with startPreview().");
         try {
