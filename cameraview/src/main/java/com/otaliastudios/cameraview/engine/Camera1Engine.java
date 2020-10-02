@@ -314,12 +314,14 @@ public class Camera1Engine extends CameraBaseEngine implements
         mPreviewStreamSize = null;
         mCaptureSize = null;
         try {
-            if (mPreview.getOutputClass() == SurfaceHolder.class) {
-                mCamera.setPreviewDisplay(null);
-            } else if (mPreview.getOutputClass() == SurfaceTexture.class) {
-                mCamera.setPreviewTexture(null);
-            } else {
-                throw new RuntimeException("Unknown CameraPreview output class.");
+            if (mCamera != null) {
+                if (mPreview.getOutputClass() == SurfaceHolder.class) {
+                    mCamera.setPreviewDisplay(null);
+                } else if (mPreview.getOutputClass() == SurfaceTexture.class) {
+                    mCamera.setPreviewTexture(null);
+                } else {
+                    throw new RuntimeException("Unknown CameraPreview output class.");
+                }
             }
         } catch (IOException e) {
             // NOTE: when this happens, the next onStopEngine() call hangs on camera.release(),
