@@ -201,12 +201,16 @@ public class Camera1Engine extends CameraBaseEngine implements
     protected Task<Void> onStartBind() {
         LOG.i("onStartBind:", "Started");
         try {
-            if (mPreview.getOutputClass() == SurfaceHolder.class) {
-                mCamera.setPreviewDisplay((SurfaceHolder) mPreview.getOutput());
-            } else if (mPreview.getOutputClass() == SurfaceTexture.class) {
-                mCamera.setPreviewTexture((SurfaceTexture) mPreview.getOutput());
+            if (mCamera != null) {
+                if (mPreview.getOutputClass() == SurfaceHolder.class) {
+                    mCamera.setPreviewDisplay((SurfaceHolder) mPreview.getOutput());
+                } else if (mPreview.getOutputClass() == SurfaceTexture.class) {
+                    mCamera.setPreviewTexture((SurfaceTexture) mPreview.getOutput());
+                } else {
+                    throw new RuntimeException("Unknown CameraPreview output class.");
+                }
             } else {
-                throw new RuntimeException("Unknown CameraPreview output class.");
+                getCallback().dispatchError(new CameraException(CameraException.REASON_NO_CAMERA));
             }
         } catch (IOException e) {
             LOG.e("onStartBind:", "Failed to bind.", e);
@@ -322,6 +326,8 @@ public class Camera1Engine extends CameraBaseEngine implements
                 } else {
                     throw new RuntimeException("Unknown CameraPreview output class.");
                 }
+            } else {
+                getCallback().dispatchError(new CameraException(CameraException.REASON_NO_CAMERA));
             }
         } catch (IOException e) {
             // NOTE: when this happens, the next onStopEngine() call hangs on camera.release(),
