@@ -239,28 +239,30 @@ public class Camera1Engine extends CameraBaseEngine implements
             LOG.e("onStartPreview:", "Failed to get params from camera. Maybe low level problem with camera or camera has already released?");
             throw new CameraException(e, CameraException.REASON_FAILED_TO_START_PREVIEW);
         }
-        // NV21 should be the default, but let's make sure, since YuvImage will only support this
-        // and a few others
-        params.setPreviewFormat(ImageFormat.NV21);
-        // setPreviewSize is not allowed during preview
-        params.setPreviewSize(mPreviewStreamSize.getWidth(), mPreviewStreamSize.getHeight());
-        if (getMode() == Mode.PICTURE) {
-            // setPictureSize is allowed during preview
-            params.setPictureSize(mCaptureSize.getWidth(), mCaptureSize.getHeight());
-        } else {
-            // mCaptureSize in this case is a video size. The available video sizes are not
-            // necessarily a subset of the picture sizes, so we can't use the mCaptureSize value:
-            // it might crash. However, the setPictureSize() passed here is useless : we don't allow
-            // HQ pictures in video mode.
-            // While this might be lifted in the future, for now, just use a picture capture size.
-            Size pictureSize = computeCaptureSize(Mode.PICTURE);
-            params.setPictureSize(pictureSize.getWidth(), pictureSize.getHeight());
-        }
-        try {
-            mCamera.setParameters(params);
-        } catch (Exception e) {
-            LOG.e("onStartPreview:", "Failed to set params for camera. Maybe incorrect parameter put in params?");
-            throw new CameraException(e, CameraException.REASON_FAILED_TO_START_PREVIEW);
+        if (params != null) {
+            // NV21 should be the default, but let's make sure, since YuvImage will only support this
+            // and a few others
+            params.setPreviewFormat(ImageFormat.NV21);
+            // setPreviewSize is not allowed during preview
+            params.setPreviewSize(mPreviewStreamSize.getWidth(), mPreviewStreamSize.getHeight());
+            if (getMode() == Mode.PICTURE) {
+                // setPictureSize is allowed during preview
+                params.setPictureSize(mCaptureSize.getWidth(), mCaptureSize.getHeight());
+            } else {
+                // mCaptureSize in this case is a video size. The available video sizes are not
+                // necessarily a subset of the picture sizes, so we can't use the mCaptureSize value:
+                // it might crash. However, the setPictureSize() passed here is useless : we don't allow
+                // HQ pictures in video mode.
+                // While this might be lifted in the future, for now, just use a picture capture size.
+                Size pictureSize = computeCaptureSize(Mode.PICTURE);
+                params.setPictureSize(pictureSize.getWidth(), pictureSize.getHeight());
+            }
+            try {
+                mCamera.setParameters(params);
+            } catch (Exception e) {
+                LOG.e("onStartPreview:", "Failed to set params for camera. Maybe incorrect parameter put in params?");
+                throw new CameraException(e, CameraException.REASON_FAILED_TO_START_PREVIEW);
+            }
         }
 
         mCamera.setPreviewCallbackWithBuffer(null); // Release anything left
