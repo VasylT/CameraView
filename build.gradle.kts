@@ -2,8 +2,8 @@
 buildscript {
 
     extra["minSdkVersion"] = 15
-    extra["compileSdkVersion"] = 29
-    extra["targetSdkVersion"] = 29
+    extra["compileSdkVersion"] = 33
+    extra["targetSdkVersion"] = 33
 
     repositories {
         google()

@@ -13,7 +13,7 @@ android {
     defaultConfig {
         setMinSdkVersion(property("minSdkVersion") as Int)
         setTargetSdkVersion(property("targetSdkVersion") as Int)
-        versionCode = 1
+        versionCode = 2
         versionName = "2.6.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         testInstrumentationRunnerArgument("filter", "" +
@@ -36,7 +36,7 @@ dependencies {
 
     api("androidx.exifinterface:exifinterface:1.3.0")
     api("androidx.lifecycle:lifecycle-common:2.2.0")
-    api("com.google.android.gms:play-services-tasks:17.2.0")
+    api("com.google.android.gms:play-services-tasks:18.0.2")
     implementation("androidx.annotation:annotation:1.1.0")
     implementation("com.otaliastudios.opengl:egloo:0.5.3")
 }
