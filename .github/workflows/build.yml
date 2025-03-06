@@ -18,4 +18,4 @@ jobs:
         with:
           java-version: 21
       - name: Perform base checks
-        run: ./gradlew cameraview:publishToDirectory --stacktrace
+        run: ./gradlew --no-daemon publish --stacktrace
