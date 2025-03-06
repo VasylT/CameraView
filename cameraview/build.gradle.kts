@@ -8,6 +8,8 @@ plugins {
     id("io.deepmedia.tools.publisher")
 }
 
+version = "2.7.0"
+
 android {
     compileSdk = 35
     namespace = "com.otaliastudios.cameraview"
