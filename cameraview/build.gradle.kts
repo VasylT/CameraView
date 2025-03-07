@@ -5,29 +5,42 @@ import io.deepmedia.tools.publisher.common.Release
 plugins {
     id("com.android.library")
     id("kotlin-android")
-    id("io.deepmedia.tools.publisher")
+    id(libs.plugins.gradle.mavenpublish.get().pluginId)
+//    id("io.deepmedia.tools.publisher")
 }
 
 version = "2.7.0"
 
 android {
-    compileSdk = 35
     namespace = "com.otaliastudios.cameraview"
+    compileSdk = 35
+
     defaultConfig {
         minSdk = 26
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        testInstrumentationRunnerArguments["filter"] = "" +
-                "com.otaliastudios.cameraview.tools.SdkExcludeFilter," +
-                "com.otaliastudios.cameraview.tools.SdkIncludeFilter"
     }
-    buildTypes["release"].isMinifyEnabled = false
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
+    }
+    buildTypes {
+        getByName("release") {
+            isMinifyEnabled = true
+        }
+    }
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+            withJavadocJar()
+        }
+    }
 }
 
 dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.mockito:mockito-inline:2.28.2")
 
-    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test:runner:1.7.0-alpha01")
     androidTestImplementation("androidx.test:rules:1.6.1")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("org.mockito:mockito-android:2.28.2")
@@ -38,6 +51,19 @@ dependencies {
     api("com.google.android.gms:play-services-tasks:18.2.0")
     implementation("androidx.annotation:annotation:1.9.1")
     implementation("com.otaliastudios.opengl:egloo:0.6.1")
+}
+
+publishing {
+    publications {
+        create<MavenPublication>("release") {
+            groupId = "com.otaliastudios"
+            artifactId = "cameraview"
+            version = "2.8.0"
+            afterEvaluate {
+                from(components["release"])
+            }
+        }
+    }
 }
 
 //publisher {
